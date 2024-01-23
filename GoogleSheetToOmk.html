@@ -100,7 +100,7 @@
 
         let curwait=0, hot, a = new auth(pa), 
         importMatrice = [
-            {'o:resource_class':'fup8:Etudiant','o:resource_template':'Répondant','props':[
+            {'verifExist':'dcterms:identifier','o:resource_class':'fup8:Etudiant','o:resource_template':'Répondant','props':[
                 {'p':'dcterms:title','v':['Prénom','Nom']},
                 {'p':'foaf:firstName','v':'Prénom'},
                 {'p':'foaf:lastName','v':'Nom'},
@@ -111,16 +111,20 @@
                 {'p':'fup8:semestre','v':'Années scolaires'},
                 {'p':'fup8:hasEC','v':'Modules de cours'}
                 ]},
-            {'o:resource_class':'dctype:Image','o:resource_template':'Image trompeuse','props':[
+            {'verifExist':'dcterms:identifier','o:resource_class':'bibo:Document','o:resource_template':'Image trompeuse','props':[
                 {'p':'dcterms:title','v':"Titre de l'image"},
                 {'p':'dcterms:format','v':'Format'},
-                {'p':'dcterms:medium','v':'Techniques'},
+                {'p':'dcterms:medium','v':[{"prop":"Techniques",'multi':',','concept':true}]},
+                {'p':'dcterms:identifier','v':'Ajouter le fichier'},
                 {'p':"o:media",'v':'Ajouter le fichier'},
-                {'p':'dcterms:description','v':"Description de l'image"},
-                {'p':'dcterms:type','v':"Catégorie de l'image"},                
+                {'p':'dcterms:type','v':[{"prop":"Catégorie de l'image",'multi':',','concept':true}]},                
                 ]},
-            {'o:resource_class':'bibo:Report','o:resource_template':'Analyse critique','props':[
+            {'verifExist':'dcterms:identifier','o:resource_class':'bibo:Report','o:resource_template':'Analyse critique','props':[
                 {'p':'dcterms:title','v':[{'numItem':0,'prop':'dcterms:title'},{'numItem':1,'prop':'dcterms:title'}]},
+                {'p':'dcterms:description','v':"Description de l'image"},
+                {'p':'dcterms:identifier','v':[{'numItem':0,'prop':'o:id'},{'numItem':1,'prop':'o:id'},"Horodateur"]},
+                {'p':'fup8:hasEtudiant','v':[{'numItem':0,'prop':'o:id','resource':1}]},
+                {'p':'dcterms:source','v':[{'numItem':1,'prop':'o:id','resource':1}]},
                 {'p':'fup8:hasQuestion','v':[
                     "@Justification du caractère trompeur de l'image",
                     "@Analyse syntaxique",
@@ -141,7 +145,7 @@
                     "#Conclusion",
                     "#Bilan",
                 ]},
-                {'p':'dcterms:date','v':"Horodateur"},                
+                {'p':'dcterms:created','v':"Horodateur"},                
                 ]},
             ];
 
@@ -176,7 +180,7 @@
                 let cols = d3.select('#cardsImagesTrompeuses').selectAll('div').data(rs).enter().append('div').attr('class','col'),
                     cards = cols.append('div').attr('class','card').attr('id',(d,i)=>{
                         saveLineInOmk(d,i);
-                        return 'cardSheetLine'+1;
+                        return 'cardSheetLine'+i;
                     }),
                     images = cards.append('img').attr('class','card-img-top').attr('id',(d,i)=>'imgSheetLine'+1),
                     bodies = cards.append('div').attr('class','card-body');
@@ -185,62 +189,114 @@
             })
         };
 
-        function getSheetDoc(path){
+        async function getSheetDoc(path){
             //merci à https://davidwalsh.name/query-string-javascript
             // https://developers.google.com/web/updates/2016/01/urlsearchparams?hl=en
-            let url = new URL(path);
-            let urlParam = new URLSearchParams(url.search);
-            let id = urlParam.get('id');
+            let url = new URL(path),
+                urlParam = new URLSearchParams(url.search),
+                id = urlParam.get('id'),
+                //vérifie s'il faut exporter en pdf
+                pdf = await  getExportPdf(id);
             //merci à https://stackoverflow.com/questions/50664868/get-pictures-from-google-drive-folder-with-javascript-to-my-website
-            let urlTof = "https://drive.google.com/uc?id="+id+"&export=download";                        
-            return urlTof; 
+            return pdf == 'no'? "https://drive.google.com/uc?id="+id+"&export=download" : pdf;                        
         }
 
-        function saveLineInOmk(d,i){
-            let data, val, items=[];
-            importMatrice.forEach(imp=>{
+        async function saveLineInOmk(d,i){
+            let data, vals, val, items=[], item,
+                pMedia = false, create = true;
+            //récupère le document si besoin
+            importMatrice.forEach(m=>m.props.forEach(p=>{if(p.p=="o:media")pMedia=p;}));
+            if(pMedia){
+                d[pMedia.v] = await getSheetDoc(d[pMedia.v]);
+            }
+            for (let index = 0; index < importMatrice.length; index++) {
+                const imp = importMatrice[index];
                 data = {};
                 for (const p in imp) {
                     if(p=='props'){
                         imp[p].forEach(propval=>{
-                            if(Array.isArray(propval.v)){
-                                val="";
-                                propval.v.forEach(pp=>{
-                                    if(pp['numItem'])val+items[pp['numItem']][0][pp['prop']]['@value']+" ";
-                                    else if (pp.substring(0,1)=='@'){
-                                        if(!data[propval.p])data[propval.p]=[];
-                                        data[propval.p].push(pp.substring(1));
-                                        val = false;
-                                    }
-                                    else if (pp.substring(0,1)=='#'){
-                                        if(!data[propval.p])data[propval.p]=[];
-                                        data[propval.p].push(d[pp]);
-                                        val = false;
-                                    }
-                                    else val+=d[pp]+" "
-                                });
-                                if(val){
-                                    val = val.substring(0, val.length - 1);
-                                    data[propval.p]=val;
-                                }
-                            }else if(prop=="o:media"){
-                                data[propval.p]=getSheetDoc(d[propval.v]);
-                            }else
-                                data[propval.p]=d[propval.v];
+                            vals = getPropVal(d, propval, items);
+                            for (const pv in vals) {
+                                data[pv]=vals[pv];
+                            }
                         })
-                    }else
+                    }else if(p!='verifExist')
                         data[p]=imp[p];
                 }
-                //save data to omeka
-                a.omk.createItem(data,item=>{
-                    console.log(item);
+                create=true;
+                if(imp.verifExist){
+                    let itemVerif = getItemByRef(imp,data);
+                    if(itemVerif.length){
+                        items.push(itemVerif[0]);
+                        create = false;
+                    }
+                }
+                if(create){
+                    //save data to omeka                
+                    await a.omk.createItem(data);
+                    item = getItemByRef(imp,data)[0];
                     items.push(item);
-                });            
-
-            });
+                }
+            }
             showItems(items,i);
 
         }
+
+        function getItemByRef(imp,data){
+            let pVerif = imp.props.filter(p=>p.p==imp.verifExist)[0],
+                vVerif = data[pVerif.p],
+                q = 'property[0][property]='
+                    +a.omk.getPropId(imp.verifExist)
+                    +'&property[0][type]=eq&property[0][text]='+encodeURIComponent(vVerif);                                                
+            return a.omk.searchItems(q);
+
+        }
+
+        function getPropVal(d, propval, items){
+            let val, data={};
+            if(Array.isArray(propval.v)){
+                val="";
+                propval.v.forEach((pp,num)=>{
+                    if(typeof pp === "object" && 'numItem' in pp){
+                        if(pp['prop']=='o:id')
+                            if(pp['resource']){
+                                if(!data[propval.p])data[propval.p]=[];
+                                data[propval.p].push({'rid':items[pp['numItem']][pp['prop']]});        
+                                val=false;
+                            }else
+                                val+=items[pp['numItem']][pp['prop']]+" ";
+                        else
+                            val+=items[pp['numItem']][pp['prop']][0]['@value']+" ";
+                    } else if (typeof pp === "object" && 'multi' in pp){
+                        if(!data[propval.p])data[propval.p]=[];
+                        d[pp.prop].split(pp.multi).forEach(v=>data[propval.p].push(v));
+                        val = false;
+                    }else if (pp.substring(0,1)=='@'){
+                        if(!data[propval.p])data[propval.p]=[];
+                        data[propval.p].push((num+1)+' - '+pp.substring(1));
+                        val = false;
+                    }
+                    else if (pp.substring(0,1)=='#'){
+                        if(!data[propval.p])data[propval.p]=[];
+                        data[propval.p].push((num+1)+' - '+d[pp.substring(1)]);
+                        val = false;
+                    }
+                    else val+=d[pp]
+                });
+                if(val){
+                    val = val.substring(0, val.length - 1);
+                    data[propval.p]=val;
+                }
+            }else
+                data[propval.p]=d[propval.v];
+            return data;
+        }
+        async function getExportPdf(id){
+            const response = await fetch("exportToPdf.php?id="+id);
+            const url = await response.text();
+            return url;
+        }
+
         function showItems(items,i){
             console.log(items);
         }

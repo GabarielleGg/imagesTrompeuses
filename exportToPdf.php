@@ -25,14 +25,18 @@ try {
 
   //récupère les infos du fichier
   $infos = $service->files->get($fileId);
-  if($infos->mimeType == "application/vnd.google-apps.document"){
-    $response = $service->files->export($fileId, 'application/pdf', array(
-        'alt' => 'media'));
-    $pdf_data = $response->getBody()->getContents();
-    $path = 'assets/exportpdf/'.uniqid().'.pdf';
-    // Then just save it like this
-    file_put_contents( $path, $pdf_data );
-  
+  //ATTENTION pour avif et heic il faut imprimer en pdf à la main
+  $docTypeToConvert = array("image/avif","application/vnd.google-apps.document","image/heic","image/heif");
+  if(in_array($infos->mimeType, $docTypeToConvert)){
+    //vérifie que le fichier est abscent
+    $path = 'assets/exportpdf/'.$fileId.'.pdf';
+    if(!file_exists($path)) {
+      $response = $service->files->export($fileId, 'application/pdf', array(
+          'alt' => 'media'));
+      $pdf_data = $response->getBody()->getContents();
+      // Then just save it like this
+      file_put_contents( $path, $pdf_data );
+    }
     echo 'http://' . $_SERVER['HTTP_HOST'] . str_replace('exportToPdf.php',$path,$_SERVER['PHP_SELF']);  
   }else{
     echo 'no';

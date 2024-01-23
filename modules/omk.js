@@ -6,7 +6,7 @@ export class omk {
         this.ident = params.ident ? params.ident : false;
         this.mail = params.mail ? params.mail : false;
         this.api = params.api ? params.api : false;
-        this.vocabs = params.vocabs ? params.vocabs : ['dcterms','foaf','skos','jdc'];
+        this.vocabs = params.vocabs ? params.vocabs : ['dcterms','foaf','fup8','bibo'];
         this.user = false;
         this.props = [];
         this.class = [];
@@ -174,9 +174,9 @@ export class omk {
         }
 
 
-        this.createItem = function (data, cb=false){
+        this.createItem = async function (data, cb=false){
             let url = me.api+'items?key_identity='+me.ident+'&key_credential='+me.key;
-            postData({'u':url,'m':'POST'}, this.formatData(data)).then((rs) => {
+            return await postData({'u':url,'m':'POST'}, this.formatData(data)).then((rs) => {
                 if(cb)cb(rs);
             });
         }
@@ -277,7 +277,7 @@ export class omk {
                 options.body=bodyData;
             }
             const response = await fetch(url.u, options);
-            return response.json(); // parses JSON response into native JavaScript objects
+            return await response.json(); // parses JSON response into native JavaScript objects
         }        
 
         function syncRequest(q){
